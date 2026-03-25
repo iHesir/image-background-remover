@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Background Remover</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      background: #0f0f0f;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+    h1 { font-size: 1.8rem; margin-bottom: 8px; color: #fff; }
+    p { color: #888; margin-bottom: 32px; font-size: 0.95rem; }
+
+    .drop-zone {
+      width: 100%;
+      max-width: 600px;
+      border: 2px dashed #333;
+      border-radius: 16px;
+      padding: 60px 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #1a1a1a;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #6366f1;
+      background: #1e1e2e;
+    }
+    .drop-zone input { display: none; }
+    .drop-icon { font-size: 48px; margin-bottom: 16px; }
+    .drop-text { color: #aaa; }
+    .drop-text span { color: #6366f1; }
+
+    .preview { margin-top: 32px; display: none; gap: 20px; flex-wrap: wrap; justify-content: center; }
+    .preview.show { display: flex; }
+    .preview-item { text-align: center; }
+    .preview-item h3 { font-size: 0.85rem; color: #666; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .preview-item img {
+      max-width: 300px;
+      max-height: 300px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: repeating-conic-gradient(#1a1a1a 0% 25%, #222 0% 50%) 50% / 16px 16px;
+    }
+
+    .status {
+      margin-top: 24px;
+      color: #6366f1;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.error { color: #ef4444; }
+
+    .download-btn {
+      display: none;
+      margin-top: 24px;
+      padding: 12px 32px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .download-btn.show { display: inline-block; }
+
+    footer { margin-top: auto; padding-top: 40px; color: #444; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+  <h1>🪄 Image Background Remover</h1>
+  <p>纯浏览器端处理 · 无需上传 · 隐私安全</p>
+
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-icon">📁</div>
+    <div class="drop-text">拖拽图片到这里，或 <span>点击选择文件</span></div>
+    <input type="file" id="fileInput" accept="image/*">
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <div class="preview" id="preview">
+    <div class="preview-item">
+      <h3>Original</h3>
+      <img id="originalImg" alt="Original">
+    </div>
+    <div class="preview-item">
+      <h3>Result</h3>
+      <img id="resultImg" alt="Result">
+    </div>
+  </div>
+
+  <a class="download-btn" id="downloadBtn" download="result.png">⬇️ Download PNG</a>
+
+  <footer>Powered by @imgly/background-removal · 运行在您本地浏览器</footer>
+
+  <script type="module">
+    import removeBackground from 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/+esm';
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const status = document.getElementById('status');
+    const preview = document.getElementById('preview');
+    const originalImg = document.getElementById('originalImg');
+    const resultImg = document.getElementById('resultImg');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let resultBlob = null;
+
+    function showStatus(msg, isError = false) {
+      status.textContent = msg;
+      status.className = 'status show' + (isError ? ' error' : '');
+    }
+
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) processFile(file);
+    });
+
+    fileInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (file) processFile(file);
+    });
+
+    async function processFile(file) {
+      // Reset
+      preview.classList.remove('show');
+      downloadBtn.classList.remove('show');
+      resultBlob = null;
+
+      // Show original
+      const originalUrl = URL.createObjectURL(file);
+      originalImg.src = originalUrl;
+      originalUrl;
+
+      showStatus('⏳ 正在加载模型并处理，请稍候...');
+
+      try {
+        const blob = await removeBackground(file, {
+          progress: (key, current, total) => {
+            if (key === 'compute:inference') {
+              showStatus(`🤖 AI 推理中... ${Math.round(current / total * 100)}%`);
+            } else {
+              showStatus(`⏳ ${key}...`);
+            }
+          },
+          output: {
+            format: 'image/png',
+            quality: 1
+          }
+        });
+
+        resultBlob = blob;
+        const resultUrl = URL.createObjectURL(blob);
+        resultImg.src = resultUrl;
+
+        downloadBtn.href = resultUrl;
+        downloadBtn.classList.add('show');
+        preview.classList.add('show');
+        showStatus('✅ 处理完成！');
+
+      } catch (err) {
+        console.error(err);
+        showStatus('❌ 处理失败: ' + err.message, true);
+      }
+    }
+  </script>
+
+</body>
+</html>
